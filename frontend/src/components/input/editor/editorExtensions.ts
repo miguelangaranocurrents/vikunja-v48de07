@@ -233,6 +233,7 @@ export function createEditorExtensions(deps: EditorExtensionDeps): Extensions {
 					props: {
 						clipboardParser: createClipboardParser(this.editor.schema),
 						transformPasted: slice => repairSliceContent(slice),
+						clipboardTextSerializer: slice => serializeSliceAsText(slice.content),
 
 						handlePaste: (view, event) => {
 
@@ -406,4 +407,32 @@ export function createEditorExtensions(deps: EditorExtensionDeps): Extensions {
 
 		PasteHandler,
 	]
+}
+
+/**
+ * Plain-text clipboard serializer that keeps list markers (ProseMirror's default
+ * drops them) and separates blocks with single newlines.
+ */
+export function serializeSliceAsText(fragment: Fragment, indent = ''): string {
+	const lines: string[] = []
+	fragment.forEach(node => {
+		const name = node.type.name
+		if (name === 'bulletList' || name === 'orderedList' || name === 'taskList') {
+			node.forEach((item, _o, i) => {
+				let marker = '- '
+				if (name === 'orderedList') {
+					marker = `${(node.attrs.start ?? 1) + i}. `
+				} else if (name === 'taskList') {
+					marker = item.attrs.checked ? '- [x] ' : '- [ ] '
+				}
+				const inner = serializeSliceAsText(item.content, indent + '  ')
+				lines.push(indent + marker + inner.replace(/^\s+/, ''))
+			})
+		} else if (node.isTextblock || node.isLeaf) {
+			lines.push(indent + node.textBetween(0, node.content.size, '\n', leaf => leaf.type.name === 'hardBreak' ? '\n' : (leaf.isLeaf ? (leaf.attrs?.alt ?? '') : '')))
+		} else {
+			lines.push(serializeSliceAsText(node.content, indent))
+		}
+	})
+	return lines.join('\n')
 }
